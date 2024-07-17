@@ -58,59 +58,34 @@ function delayClick(time) {
 })();
 async function launchBrowserForUser(username, password) {
   try {
-    const browser = await puppeteer.launch({
-      headless: process.env.ENVIRONMENT !== "dev", // 当ENVIRONMENT不是'dev'时启用无头模式
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-infobars",
-        "--window-position=0,0",
-        "--ignore-certifcate-errors",
-        "--ignore-certifcate-errors-spki-list",
-        "--disable-web-security",
-        "--disable-features=IsolateOrigins,site-per-process",
-        "--allow-running-insecure-content",
-        "--disable-blink-features=AutomationControlled",
-        "--no-sandbox",
-        "--mute-audio",
-        "--no-zygote",
-        "--no-xshm",
-        "--window-size=1920,1080",
-        "--no-first-run",
-        "--no-default-browser-check",
-        "--disable-dev-shm-usage",
-        "--disable-gpu",
-        "--enable-webgl",
-        "--ignore-certificate-errors",
-        "--lang=en-US,en;q=0.9",
-        "--password-store=basic",
-        "--disable-gpu-sandbox",
-        "--disable-software-rasterizer",
-        "--disable-background-timer-throttling",
-        "--disable-backgrounding-occluded-windows",
-        "--disable-renderer-backgrounding",
-        "--disable-infobars",
-        "--disable-breakpad",
-        "--disable-canvas-aa",
-        "--disable-2d-canvas-clip-aa",
-        "--disable-gl-drawing-for-tests",
-        "--enable-low-end-device-mode",
-      ], //linux需要
-      defaultViewport: {
-        width: 1280,
-        height: 800,
-        userAgent:
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.150 Safari/537.36",
-      },
-    });
-    const page = await browser.newPage();
+    const browserOptions = {
+      headless: "auto", 
+      args: ["--no-sandbox", "--disable-setuid-sandbox"], // Linux 需要的安全设置
+    };
+
+    // 如果环境变量不是 'dev'，则添加代理配置
+    // if (process.env.ENVIRONMENT !== "dev") {
+    //   browserOptions["proxy"] = {
+    //     host: "3.26.115.230",
+    //     port: "27754",
+    //     username: "GECPjZ1jcC",
+    //     password: "Sa39rYDhNx",
+    //   };
+    // }
+
+    var { connect } = await import("puppeteer-real-browser");
+    const { page, browser } = await connect(
+        browserOptions
+    );
+    // await page.goto(loginUrl);
+    //登录操作
+    // await page.goto(loginUrl, { waitUntil: "networkidle0" });
+    await navigatePage(loginUrl, page, browser);
+    await delayClick(8000);
     // 设置额外的 headers
     await page.setExtraHTTPHeaders({
       "accept-language": "en-US,en;q=0.9",
     });
-
-    // 调用封装的反检测函数
-    await bypassDetection(page);
     // 验证 `navigator.webdriver` 属性是否为 undefined
     const isWebDriverUndefined = await page.evaluate(() => {
       return `${navigator.webdriver}`;
@@ -150,12 +125,10 @@ async function launchBrowserForUser(username, password) {
         await new Promise((resolve) => setTimeout(resolve, 3000));
         console.log("Retrying now...");
         // 尝试刷新页面
-        await page.reload();
+        // await page.reload();
       }
     });
-
-    //登录操作
-    await page.goto(loginUrl, { waitUntil: "networkidle0" });
+    // //登录操作
     console.log("登录操作");
     // 使用XPath查询找到包含"登录"或"login"文本的按钮
     await page.evaluate(() => {
@@ -204,7 +177,7 @@ async function launchBrowserForUser(username, password) {
     page.on("load", async () => {
       // await page.evaluate(externalScript); //因为这个是在页面加载好之后执行的,而脚本是在页面加载好时刻来判断是否要执行，由于已经加载好了，脚本就不会起作用
     });
-    await page.goto("https://linux.do/t/topic/13716/190");
+    await page.goto("https://linux.do/t/topic/13716/285");
   } catch (err) {
     console.log(err);
   }
@@ -223,8 +196,7 @@ async function login(page, username, password) {
   // 等待密码输入框加载
   await page.waitForSelector("#login-account-password");
   // 模拟人类在输入用户名后的短暂停顿
-  await delayClick(500);
-  // 清空输入框并输入密码
+  delayClick; // 清空输入框并输入密码
   await page.click("#login-account-password", { clickCount: 3 });
   await page.type("#login-account-password", password, {
     delay: 100,
@@ -238,7 +210,7 @@ async function login(page, username, password) {
   await delayClick(500); // 模拟在点击登录按钮前的短暂停顿
   try {
     await Promise.all([
-      page.waitForNavigation({ waitUntil: "domcontentloaded" }), // 等待 页面跳转 DOMContentLoaded 事件
+      //   page.waitForNavigation({ waitUntil: "domcontentloaded" }), // 等待 页面跳转 DOMContentLoaded 事件
       page.click("#login-button"), // 点击登录按钮触发跳转
     ]); //注意如果登录失败，这里会一直等待跳转，导致脚本执行失败
   } catch (error) {
@@ -248,35 +220,30 @@ async function login(page, username, password) {
   await delayClick(1000);
 }
 
-async function bypassDetection(page) {
-  // 在页面上下文中执行脚本，修改 `navigator.webdriver` 以及其他反检测属性
-  await page.evaluateOnNewDocument(() => {
-    // Overwrite the `navigator.webdriver` property to return `undefined`.
-    Object.defineProperty(navigator, "webdriver", {
-      get: () => undefined,
-    });
+async function navigatePage(url, page, browser) {
+  await page.goto(url);
 
-    // Pass the Chrome Test.
-    window.chrome = {
-      runtime: {},
-      // Add more if needed
-    };
+  const startTime = Date.now(); // 记录开始时间
+  let pageTitle = await page.title(); // 获取当前页面标题
 
-    // Pass the Permissions Test.
-    const originalQuery = window.navigator.permissions.query;
-    window.navigator.permissions.query = (parameters) =>
-      parameters.name === "notifications"
-        ? Promise.resolve({ state: Notification.permission })
-        : originalQuery(parameters);
+  while (pageTitle.includes("Just a moment")) {
+    console.log(
+      "The page is under Cloudflare protection. Waiting..."
+    );
 
-    // Pass the Plugins Length Test.
-    Object.defineProperty(navigator, "plugins", {
-      get: () => [1, 2, 3, 4, 5], // Make plugins array non-empty
-    });
+    await delayClick(2000); // 每次检查间隔2秒
 
-    // Pass the Languages Test.
-    Object.defineProperty(navigator, "languages", {
-      get: () => ["en-US", "en"],
-    });
-  });
+    // 重新获取页面标题
+    pageTitle = await page.title();
+
+    // 检查是否超过15秒
+    if (Date.now() - startTime > 35000) {
+      console.log("Timeout exceeded, aborting actions.");
+      await browser.close();
+      return; // 超时则退出函数
+    }
+  }
+
+  // 如果循环正常结束，说明页面已经加载完毕，没有超时
+  console.log("The page is ready for further actions.");
 }
